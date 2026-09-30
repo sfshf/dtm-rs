@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["redislock", "redsync"]
+
+[workspace.dependencies]
+redis = { version = "*", features = ["tokio-comp", "script"] }
+tokio = { version = "*", features = ["full", "macros", "rt-multi-thread"] }
