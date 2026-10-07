@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["redislock", "redsync"]
+
+[workspace.dependencies]
+redis = { version = "*", features = ["tokio-comp", "script"] }
+tokio = { version = "*", features = [
+    "full",
+    "macros",
+    "rt-multi-thread",
+    "tracing",
+] }
+tracing = { version = "*", features = ["std"] }
+tracing-subscriber = { version = "*", features = [
+    "env-filter",
+    "fmt",
+    "json",
+    "ansi",
+] }
+rand = { version = "*", features = ["std"] }
+base64 = { version = "*", features = ["alloc"] }
+bytes = { version = "*", features = ["std"] }
+opentelemetry = { version = "*", features = ["rt-tokio"] }
+tracing-opentelemetry = { version = "*", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "*", features = ["rt-tokio"] }
