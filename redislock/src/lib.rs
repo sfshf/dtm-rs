@@ -9,6 +9,7 @@ use std::{
     },
     time::Duration,
 };
+use tokio::time;
 
 /// lua scripts
 const LUA_OBTAIN: &str = include_str!("../script/obtain.lua");
@@ -18,7 +19,7 @@ const LUA_RELEASE: &str = include_str!("../script/release.lua");
 
 /// Client wraps a redis client
 pub struct Client {
-    cli: MultiplexedConnection,
+    rcli: MultiplexedConnection,
     token: Arc<Mutex<Vec<u8>>>, //
 }
 
@@ -45,9 +46,9 @@ pub struct Options {
 /// Client methods
 impl Client {
     /// new a Client instance
-    pub fn new<'a>(cli: MultiplexedConnection) -> Self {
+    pub fn new<'a>(rcli: MultiplexedConnection) -> Self {
         Self {
-            cli,
+            rcli,
             token: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -96,40 +97,51 @@ impl Client {
             }
         };
         let script = redis::Script::new(LUA_OBTAIN);
+        let sleep = time::sleep(ttl);
+        tokio::pin!(sleep);
         loop {
-            match script
-                .key(&run_keys)
-                .arg((&value, token_len, ttl.as_millis(), fence))
-                .invoke_async::<i64>(&mut self.cli)
-                .await
-            {
-                Ok(fence_token) => {
-                    return Ok(Lock {
-                        cli: self,
-                        keys,
-                        value,
-                        token_len,
-                        fence_token,
-                    });
-                }
-                Err(e) => {
-                    match e.kind() {
-                        redis::ErrorKind::Server(_) => {
-                            // any non-nil error from obtain is terminal (transient redis
-                            // errors are unlikely to clear within a lock TTL and retrying a
-                            // broken server is futile).
-                            return Err(e.to_string().into());
-                        }
-                        _ => {
-                            // retry
-                            let backoff = opt.retry_strategy.next_back_off()?;
-                            if backoff.is_zero() {
-                                return Err(ErrorKind::NotObtained.into());
-                            }
-                            tokio::time::sleep(backoff).await;
-                        }
-                    }
-                }
+            tokio::select! {
+             res = async {
+                script
+                 .key(&run_keys)
+                 .arg((&value, token_len, ttl.as_millis(), fence))
+                 .invoke_async::<i64>(&mut self.rcli).await
+             }
+                 => {
+                     match res
+             {
+                 Ok(fence_token) => {
+                     return Ok(Lock {
+                         cli: self,
+                         keys,
+                         value,
+                         token_len,
+                         fence_token,
+                     });
+                 }
+                 Err(e) => {
+                     match e.kind() {
+                         redis::ErrorKind::Server(_) => {
+                             // any non-nil error from obtain is terminal (transient redis
+                             // errors are unlikely to clear within a lock TTL and retrying a
+                             // broken server is futile).
+                             return Err(e.to_string().into());
+                         }
+                         _ => {
+                             // retry
+                             let backoff = opt.retry_strategy.next_back_off()?;
+                             if backoff.is_zero() {
+                                 return Err(ErrorKind::NotObtained.into());
+                             }
+                             tokio::time::sleep(backoff).await;
+                         }
+                     }
+                 }
+             }
+                 }
+             () = &mut sleep => {
+                return Err("obtain timeout".into())
+             }
             }
         }
     }
@@ -183,20 +195,86 @@ impl<'a> Lock<'a> {
 
     /// ttl returns the remaining time-to-live. Returns 0 if the lock has expired.
     /// In case lock is holding multiple keys, ttl returns the min ttl among those
-    pub fn ttl(&self) -> Result<Duration, Box<dyn Error>> {
-        unimplemented!()
+    pub async fn ttl(&mut self) -> Result<Duration, Box<dyn Error>> {
+        let script = redis::Script::new(LUA_PTTL);
+        match script
+            .key(&self.keys)
+            .arg(&self.value)
+            .invoke_async::<u64>(&mut self.cli.rcli)
+            .await
+        {
+            Ok(dur) => Ok(Duration::from_millis(dur)),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// refresh extends the lock with a new ttl.
     /// May retrun ErrorKind::NotObtained if refresh is unsuccessful.
-    pub fn refresh(&self, ttl: Duration, opt: Option<Options>) -> Result<(), Box<dyn Error>> {
-        unimplemented!()
+    pub async fn refresh(
+        &mut self,
+        ttl: Duration,
+        opt: Option<Options>,
+    ) -> Result<(), Box<dyn Error>> {
+        let opt = opt.unwrap_or(Options {
+            retry_strategy: RetryStrategy::NoRetry,
+            meta_data: "".to_string(),
+            token: "".to_string(),
+            fence_key: "".to_string(),
+        });
+        let script = redis::Script::new(LUA_REFRESH);
+        let sleep = time::sleep(ttl);
+        tokio::pin!(sleep);
+        loop {
+            tokio::select! {
+                res = async {
+                    script
+                .key(&self.keys)
+                .arg(&self.value)
+                .invoke_async::<u64>(&mut self.cli.rcli).await
+                } => {
+                    match res
+                    {
+                        Ok(_) => return Ok(()),
+                        Err(e) => {
+                            match e.kind() {
+                                redis::ErrorKind::Server(_) => {
+                                    // any non-nil error from obtain is terminal (transient redis
+                                    // errors are unlikely to clear within a lock TTL and retrying a
+                                    // broken server is futile).
+                                    return Err(e.to_string().into());
+                                }
+                                _ => {
+                                    // retry
+                                    let backoff = opt.retry_strategy.next_back_off()?;
+                                    if backoff.is_zero() {
+                                        return Err(ErrorKind::NotObtained.into());
+                                    }
+                                    tokio::time::sleep(backoff).await;
+                                }
+                            }
+                        }
+                    }
+                }
+                () = &mut sleep => {
+                    return Err("refresh timeout".into())
+                }
+            }
+        }
     }
 
     /// release manually releases the lock.
     /// May return ErrorKind::LockNotHeld if the lock is not held by the caller.
-    pub fn release(&self) -> Result<(), Box<dyn Error>> {
-        unimplemented!()
+    pub async fn release(&mut self) -> Result<(), Box<dyn Error>> {
+        let script = redis::Script::new(LUA_RELEASE);
+        match script
+            .key(&self.keys)
+            .arg(&self.value)
+            .invoke_async::<u64>(&mut self.cli.rcli)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
