@@ -282,10 +282,38 @@ impl<'a> Lock<'a> {
 mod lock_tests {
     use super::*;
 
+    struct TestContext {
+        client: redis::Client,
+    }
+
+    impl TestContext {
+        fn new() -> Self {
+            let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
+
+            Self { client }
+        }
+
+        async fn conn(&self) -> redis::aio::MultiplexedConnection {
+            self.client
+                .get_multiplexed_async_connection()
+                .await
+                .unwrap()
+        }
+
+        async fn del(&self, keys: Vec<String>) {
+            let mut conn = self.conn().await;
+            redis::cmd("DEL")
+                .arg(keys)
+                .exec_async(&mut conn)
+                .await
+                .unwrap();
+        }
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn redis_conn() {
-        let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
-        let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+        let ctx = TestContext::new();
+        let mut conn = ctx.conn().await;
         redis::cmd("SET")
             .arg(&["foo", "bar"])
             .exec_async(&mut conn)
@@ -297,12 +325,13 @@ mod lock_tests {
             .await
             .unwrap();
         assert_eq!(result, ["bar"]);
+        ctx.del(vec!["foo".to_string()]).await;
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn redis_script() {
-        let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
-        let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+        let ctx = TestContext::new();
+        let mut conn = ctx.conn().await;
         let script = redis::Script::new(
             r"
             return tonumber(ARGV[1]) + tonumber(ARGV[2]);
@@ -315,8 +344,8 @@ mod lock_tests {
     // #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[tokio::test(flavor = "current_thread")]
     async fn redis_script_obtain() {
-        let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
-        let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+        let ctx = TestContext::new();
+        let mut conn = ctx.conn().await;
     }
 }
 
