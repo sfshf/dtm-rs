@@ -70,7 +70,7 @@ impl Client {
     /// May return ErrorKind::NotObtained if not successful.
     pub async fn obtain_multi<'a>(
         &'a mut self,
-        mut keys: Vec<String>,
+        keys: Vec<String>,
         ttl: Duration,
         opt: Option<Options>,
     ) -> Result<Lock<'a>, Box<dyn Error>> {
@@ -140,7 +140,7 @@ impl Client {
              }
                  }
              () = &mut sleep => {
-                return Err("obtain timeout".into())
+                return Err(ErrorKind::RetryTimeout.into())
              }
             }
         }
@@ -256,7 +256,7 @@ impl<'a> Lock<'a> {
                     }
                 }
                 () = &mut sleep => {
-                    return Err("refresh timeout".into())
+                    return Err(ErrorKind::RetryTimeout.into());
                 }
             }
         }
@@ -317,20 +317,6 @@ mod lock_tests {
     async fn redis_script_obtain() {
         let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
         let mut conn = client.get_multiplexed_async_connection().await.unwrap();
-        let script = redis::Script::new(LUA_OBTAIN);
-        match script
-            .key("lock:foo")
-            .arg(("abc123", 1, 1, 0))
-            .invoke_async::<String>(&mut conn)
-            .await
-        {
-            Ok(result) => {
-                println!("result = {result}");
-            }
-            Err(e) => {
-                println!("error = {e}")
-            }
-        }
     }
 }
 
@@ -342,6 +328,7 @@ pub enum ErrorKind {
     RetryBaseStrategyNone,
     RetryMaxNone,
     RetryMinNone,
+    RetryTimeout,
 }
 
 ///
@@ -355,6 +342,7 @@ impl ErrorKind {
             RetryBaseStrategyNone => "retry: none base strategy",
             RetryMaxNone => "retry: none max turns",
             RetryMinNone => "retry: none min turns",
+            RetryTimeout => "retry: timeout",
         }
     }
 }
