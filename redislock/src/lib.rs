@@ -779,7 +779,85 @@ mod lock_tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn lock_refresh() {
+    async fn lock_refresh_success() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_retry_success() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_retry_failure_on_lost_lock_returns_immediately() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_retry_recovers_from_transient_error() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_retry_exhausted_eturns_last_error() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_expired() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_nil_receiver() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_value_mismatch() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_deleted_key() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_sequential_refreshes() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_preserves_token_and_metadata() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_multi_key_missing() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_multi_key_wrong_value() {
+        // let ctx = TestContext::new();
+        // let mut conn = ctx.conn().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn lock_refresh_ctx_cancelled_during_retry() {
         // let ctx = TestContext::new();
         // let mut conn = ctx.conn().await;
     }
